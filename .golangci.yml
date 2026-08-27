@@ -1,0 +1,62 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - misspell
+    - revive
+    - staticcheck
+    - unconvert
+    - unused
+    - errname
+    - errorlint
+    - nilerr
+    - usestdlibvars
+    - intrange
+    - perfsprint
+    - recvcheck
+    - wastedassign
+    - copyloopvar
+    - gosec
+
+  settings:
+    misspell:
+      locale: US
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+          disabled: false
+        - name: package-comments
+          severity: warning
+          disabled: true
+    gosec:
+      severity: low
+      confidence: low
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+    paths:
+      - _test\.go
+    rules:
+      - linters:
+          - errcheck
+          - unused
+        path: _test\.go
+      - linters:
+          - gosec
+        path: _test\.go
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+run:
+  timeout: 5m
+  tests: true

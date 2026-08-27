@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [ dev, develop, main, master ]
+  pull_request:
+    branches: [ dev, develop, main, master ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }} / Go ${{ matrix.go-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: [ '1.26.x' ]
+        os: [ ubuntu-latest, macos-latest ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+      - name: Build
+        run: go build ./...
+
+  test:
+    name: Tests & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run vet
+        run: go vet ./...
+
+      - name: Run tests (excluding examples)
+        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic $(go list ./... | grep -v /examples)
+
+      - name: Show coverage
+        run: go tool cover -func=coverage.txt
+
+      - name: Coverage gate (100% excluding examples)
+        run: |
+          coverage=$(go tool cover -func=coverage.txt | awk '/^total:/ {gsub(/%/, "", $3); print $3}')
+          echo "Total coverage: ${coverage}%"
+          if [ "$coverage" != "100.0" ]; then
+            echo "::error::Coverage is ${coverage}%, expected 100.0% (excluding examples)"
+            exit 1
+          fi
+
+      - name: Run benchmarks
+        run: go test -bench=. -benchmem $(go list ./... | grep -v /examples)
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.txt
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest
+          args: --timeout=5m
+
+  sonar:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+
+      - name: Generate coverage report
+        if: env.SONAR_TOKEN != ''
+        run: go test -coverprofile=coverage.out $(go list ./... | grep -v /examples)
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Run SonarCloud scan
+        if: env.SONAR_TOKEN != ''
+        uses: sonarsource/sonarqube-scan-action@v5
+        with:
+          args: >
+            -Dsonar.projectKey=nikon11211_${{ github.event.repository.name }}
+            -Dsonar.organization=nikon11211
+            -Dsonar.host.url=https://sonarcloud.io
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
